@@ -7,12 +7,12 @@ import MonkeyError from "../utils/error";
 import {
   Collection,
   DeleteResult,
-  InsertOneResult,
   ObjectId,
   UpdateResult,
   WithId,
 } from "mongodb";
 import Logger from "../utils/logger";
+import { flattenObjectDeep } from "../utils/misc";
 
 const SECONDS_PER_HOUR = 3600;
 
@@ -24,20 +24,23 @@ export async function addUser(
   name: string,
   email: string,
   uid: string
-): Promise<InsertOneResult<MonkeyTypes.User>> {
-  const user = await getUsersCollection().findOne({ uid });
-  if (user) {
-    throw new MonkeyError(409, "User document already exists", "addUser");
-  }
-
-  const currentDate = Date.now();
-  return await getUsersCollection().insertOne({
-    _id: new ObjectId(),
+): Promise<void> {
+  const newUserDocument: MonkeyTypes.User = {
     name,
     email,
     uid,
-    addedAt: currentDate,
-  });
+    addedAt: Date.now(),
+  };
+
+  const result = await getUsersCollection().updateOne(
+    { uid },
+    { $setOnInsert: newUserDocument },
+    { upsert: true }
+  );
+
+  if (result.upsertedCount === 0) {
+    throw new MonkeyError(409, "User document already exists", "addUser");
+  }
 }
 
 export async function deleteUser(uid: string): Promise<DeleteResult> {
@@ -694,4 +697,30 @@ export async function recordAutoBanEvent(
 
   await getUsersCollection().updateOne({ uid }, { $set: updateObj });
   Logger.logToDb("user_auto_banned", { autoBanTimestamps }, uid);
+}
+
+export async function updateProfile(
+  uid: string,
+  updates: Partial<MonkeyTypes.UserProfileDetails>
+): Promise<void> {
+  const profileUpdates = _.pickBy(
+    flattenObjectDeep(updates, "profileDetails"),
+    (value) => value !== undefined
+  );
+
+  const updateResult = await getUsersCollection().updateOne(
+    {
+      uid,
+      banned: {
+        $ne: true,
+      },
+    },
+    {
+      $set: profileUpdates,
+    }
+  );
+
+  if (updateResult.matchedCount === 0) {
+    throw new MonkeyError(403, "User is banned");
+  }
 }

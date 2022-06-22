@@ -6,9 +6,11 @@ import * as Notifications from "./notifications";
 import format from "date-fns/format";
 import { Auth } from "../firebase";
 import differenceInSeconds from "date-fns/differenceInSeconds";
+import { change } from "../controllers/page-controller";
 import { getHTMLById as getBadgeHTMLbyId } from "../controllers/badge-controller";
 
 let currentTimeRange: "allTime" | "daily" = "allTime";
+let currentLanguage = "english";
 
 type LbKey = 15 | 60;
 
@@ -132,7 +134,10 @@ function updateFooter(lb: LbKey): void {
     return;
   }
 
-  if ((DB.getSnapshot().globalStats?.time ?? 0) < 7200) {
+  if (
+    window.location.hostname !== "localhost" &&
+    (DB.getSnapshot().typingStats?.timeTyping ?? 0) < 7200
+  ) {
     $(`#leaderboardsWrapper table.${side} tfoot`).html(`
     <tr>
       <td colspan="6" style="text-align:center;">Your account must have 2 hours typed to be placed on the leaderboard.</>
@@ -228,7 +233,7 @@ function checkLbMemory(lb: LbKey): void {
   }
 }
 
-function fillTable(lb: LbKey, prepend?: number): void {
+async function fillTable(lb: LbKey, prepend?: number): Promise<void> {
   if (!currentData[lb]) {
     return;
   }
@@ -247,6 +252,37 @@ function fillTable(lb: LbKey, prepend?: number): void {
   }
 
   const loggedInUserName = DB.getSnapshot()?.name;
+
+  const snap = DB.getSnapshot();
+
+  const avatarUrlPromises = currentData[lb].map((entry) => {
+    const isCurrentUser =
+      Auth.currentUser &&
+      entry.uid === Auth.currentUser.uid &&
+      snap.discordAvatar &&
+      snap.discordId;
+
+    const entryHasAvatar = entry.discordAvatar && entry.discordId;
+
+    const avatarSource: Partial<
+      MonkeyTypes.Snapshot | MonkeyTypes.LeaderboardEntry
+    > = (isCurrentUser && snap) || (entryHasAvatar && entry) || {};
+
+    return Misc.getDiscordAvatarUrl(
+      avatarSource.discordId,
+      avatarSource.discordAvatar
+    );
+  });
+
+  const avatarUrls = (await Promise.allSettled(avatarUrlPromises)).map(
+    (promise) => {
+      if (promise.status === "fulfilled") {
+        return promise.value;
+      }
+
+      return null;
+    }
+  );
 
   let a = currentData[lb].length - leaderboardSingleLimit;
   let b = currentData[lb].length;
@@ -274,21 +310,9 @@ function fillTable(lb: LbKey, prepend?: number): void {
 
     let avatar = `<div class="avatarPlaceholder"><i class="fas fa-user-circle"></i></div>`;
 
-    const snap = DB.getSnapshot();
-
-    const isCurrentUser =
-      Auth.currentUser &&
-      entry.uid === Auth.currentUser.uid &&
-      snap.discordAvatar &&
-      snap.discordId;
-
-    const entryHasAvatar = entry.discordAvatar && entry.discordId;
-
-    const avatarSource = (isCurrentUser && snap) || (entryHasAvatar && entry);
-
-    if (avatarSource) {
-      const avatarUrl = `https://cdn.discordapp.com/avatars/${avatarSource.discordId}/${avatarSource.discordAvatar}.png?size=32`;
-      avatar += `<div class="avatar" style="background-image:url(${avatarUrl})"></div>`;
+    const currentEntryAvatarUrl = avatarUrls[i];
+    if (currentEntryAvatarUrl !== null) {
+      avatar = `<div class="avatar" style="background-image:url(${currentEntryAvatarUrl})"></div>`;
     }
 
     html += `
@@ -296,9 +320,12 @@ function fillTable(lb: LbKey, prepend?: number): void {
     <td>${
       entry.rank === 1 ? '<i class="fas fa-fw fa-crown"></i>' : entry.rank
     }</td>
-    <td><div class="avatarNameBadge">${avatar}${entry.name}${
-      entry.badgeIds ? getBadgeHTMLbyId(entry.badgeIds[0]) : ""
-    }</div></td>
+    <td>
+    <div class="avatarNameBadge">${avatar}
+      <span class="entryName" uid=${entry.uid}>${entry.name}</span>
+      ${entry.badgeIds ? getBadgeHTMLbyId(entry.badgeIds[0]) : ""}
+    </div>
+    </td>
     <td class="alignRight">${(Config.alwaysShowCPM
       ? entry.wpm * 5
       : entry.wpm
@@ -316,11 +343,21 @@ function fillTable(lb: LbKey, prepend?: number): void {
   </tr>
   `;
   }
+
   if (!prepend) {
     $(`#leaderboardsWrapper table.${side} tbody`).append(html);
   } else {
     $(`#leaderboardsWrapper table.${side} tbody`).prepend(html);
   }
+
+  $(".entryName").on("click", (e) => {
+    const uid = $(e.target).attr("uid");
+    if (uid) {
+      window.history.replaceState(null, "", "/profile?uid=" + uid);
+      change("profile", true);
+      hide();
+    }
+  });
 }
 
 const showYesterdayButton = $("#leaderboardsWrapper .showYesterdayButton");
@@ -351,8 +388,10 @@ function updateTitle(): void {
   const el = $("#leaderboardsWrapper .mainTitle");
 
   const timeRangeString = currentTimeRange === "daily" ? "Daily" : "All-Time";
+  const capitalizedLanguage =
+    currentLanguage.charAt(0).toUpperCase() + currentLanguage.slice(1);
 
-  el.text(`${timeRangeString} English Leaderboards`);
+  el.text(`${timeRangeString} ${capitalizedLanguage} Leaderboards`);
 }
 
 function updateYesterdayButton(): void {
@@ -377,7 +416,7 @@ async function update(): Promise<void> {
 
   const leaderboardRequests = timeModes.map((mode2) => {
     return Ape.leaderboards.get({
-      language: "english",
+      language: currentLanguage,
       mode: "time",
       mode2,
       isDaily: currentTimeRange === "daily",
@@ -389,7 +428,7 @@ async function update(): Promise<void> {
     leaderboardRequests.push(
       ...timeModes.map((mode2) => {
         return Ape.leaderboards.getRank({
-          language: "english",
+          language: currentLanguage,
           mode: "time",
           mode2,
           isDaily: currentTimeRange === "daily",
@@ -462,7 +501,7 @@ async function requestMore(lb: LbKey, prepend = false): Promise<void> {
   }
 
   const response = await Ape.leaderboards.get({
-    language: "english",
+    language: currentLanguage,
     mode: "time",
     mode2: lb.toString(),
     isDaily: currentTimeRange === "daily",
@@ -483,7 +522,7 @@ async function requestMore(lb: LbKey, prepend = false): Promise<void> {
   if (prepend && !limitVal) {
     limitVal = leaderboardSingleLimit - 1;
   }
-  fillTable(lb, limitVal);
+  await fillTable(lb, limitVal);
   hideLoader(lb);
   requesting[lb] = false;
 }
@@ -492,7 +531,7 @@ async function requestNew(lb: LbKey, skip: number): Promise<void> {
   showLoader(lb);
 
   const response = await Ape.leaderboards.get({
-    language: "english",
+    language: currentLanguage,
     mode: "time",
     mode2: lb.toString(),
     isDaily: currentTimeRange === "daily",
@@ -515,7 +554,7 @@ async function requestNew(lb: LbKey, skip: number): Promise<void> {
     return;
   }
   currentData[lb] = data;
-  fillTable(lb);
+  await fillTable(lb);
   hideLoader(lb);
 }
 
@@ -568,10 +607,45 @@ $("#leaderboardsWrapper").on("click", (e) => {
   }
 });
 
-// $("#leaderboardsWrapper .buttons .button").on("click",(e) => {
-//   currentLeaderboard = $(e.target).attr("board");
-//   update();
-// });
+const languageSelector = $(
+  "#leaderboardsWrapper #leaderboards .leaderboardsTop .buttonGroup.timeRange .languageSelect"
+).select2({
+  placeholder: "select a language",
+  width: "100%",
+  data: [
+    {
+      id: "english",
+      text: "english",
+      selected: true,
+    },
+    {
+      id: "spanish",
+      text: "spanish",
+    },
+    {
+      id: "german",
+      text: "german",
+    },
+    {
+      id: "portuguese",
+      text: "portuguese",
+    },
+    {
+      id: "indonesian",
+      text: "indonesian",
+    },
+    {
+      id: "italian",
+      text: "italian",
+    },
+  ],
+});
+
+languageSelector.on("select2:select", (e) => {
+  currentLanguage = e.params.data.id;
+  updateTitle();
+  update();
+});
 
 let leftScrollEnabled = true;
 
@@ -692,6 +766,10 @@ $(
   "#leaderboardsWrapper #leaderboards .leaderboardsTop .buttonGroup.timeRange .allTime"
 ).on("click", () => {
   currentTimeRange = "allTime";
+  currentLanguage = "english";
+  languageSelector.prop("disabled", true);
+  languageSelector.val("english");
+  languageSelector.trigger("change");
   update();
 });
 
@@ -700,6 +778,7 @@ $(
 ).on("click", () => {
   currentTimeRange = "daily";
   showYesterdayButton.removeClass("active");
+  languageSelector.prop("disabled", false);
   update();
 });
 

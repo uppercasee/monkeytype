@@ -21,15 +21,26 @@ export function loading(truefalse: boolean): void {
   }
 }
 
-export function update(discordId?: string, discordAvatar?: string): void {
+export async function update(
+  discordId?: string,
+  discordAvatar?: string
+): Promise<void> {
   if (Auth.currentUser != null) {
     if (discordAvatar && discordId) {
-      usingAvatar = true;
-      $("#top #menu .account .avatar").css(
-        "background-image",
-        `url(https://cdn.discordapp.com/avatars/${discordId}/${discordAvatar}.png)`
+      const discordAvatarUrl = await Misc.getDiscordAvatarUrl(
+        discordId,
+        discordAvatar
       );
-      $("#top #menu .account .avatar").removeClass("hidden");
+      if (discordAvatarUrl) {
+        $("#top #menu .account .avatar").css(
+          "background-image",
+          `url(${discordAvatarUrl})`
+        );
+        usingAvatar = true;
+
+        $("#top #menu .account .icon").addClass("hidden");
+        $("#top #menu .account .avatar").removeClass("hidden");
+      }
     } else {
       $("#top #menu .account .avatar").addClass("hidden");
     }
