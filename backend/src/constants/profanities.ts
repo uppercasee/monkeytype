@@ -1,5 +1,7 @@
+import _ from "lodash";
+
 // Sorry for the bad words
-const profanities = [
+export const profanities = [
   "miodec",
   "bitly",
   "niqqa",
@@ -92,16 +94,13 @@ const profanities = [
   "fukker",
   "fukkin",
   "g00k",
-  "gay",
   "gayboy",
   "gaygirl",
-  "gays",
   "gayz",
   "god-damned",
   "h00r",
   "h0ar",
   "h0re",
-  "hells",
   "hoar",
   "hoor",
   "hoore",
@@ -118,7 +117,6 @@ const profanities = [
   "kunt",
   "kunts",
   "kuntz",
-  "lesbian",
   "lezzian",
   "lipshits",
   "lipshitz",
@@ -177,9 +175,6 @@ const profanities = [
   "pussy",
   "puuke",
   "puuker",
-  "queer",
-  "queers",
-  "queerz",
   "qweers",
   "qweerz",
   "qweir",
@@ -269,7 +264,6 @@ const profanities = [
   "kawk",
   "l3itch",
   "l3i+ch",
-  "lesbian",
   "masturbate",
   "masterbat",
   "masterbat3",
@@ -350,12 +344,10 @@ const profanities = [
   "fu(",
   "fuk",
   "futkretzn",
-  "gay",
   "gook",
   "guiena",
   "h0r",
   "h4x0r",
-  "hell",
   "helvete",
   "hoer",
   "honkey",
@@ -441,4 +433,7 @@ const profanities = [
   "ass",
 ];
 
-export default profanities;
+export const regexProfanities = profanities.map((profanity) => {
+  const normalizedProfanity = _.escapeRegExp(profanity.toLowerCase());
+  return `${normalizedProfanity}.*`;
+});

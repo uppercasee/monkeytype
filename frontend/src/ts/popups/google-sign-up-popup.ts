@@ -29,7 +29,7 @@ export function show(credential: UserCredential): void {
       .css("opacity", 0)
       .removeClass("hidden")
       .animate({ opacity: 1 }, 100, () => {
-        $("#googleSignUpPopup input").trigger("focus").select();
+        $("#googleSignUpPopup input").trigger("focus").trigger("select");
       });
   }
 }
@@ -86,7 +86,7 @@ async function apply(): Promise<void> {
       await sendEmailVerification(signedInUser.user);
       AllTimeStats.clear();
       Notifications.add("Account created", 1, 3);
-      $("#menu .text-button.account .text").text(name);
+      $("#menu .textButton.account .text").text(name);
       LoginPage.enableInputs();
       LoginPage.hidePreloader();
       await AccountController.loadUser(signedInUser.user);

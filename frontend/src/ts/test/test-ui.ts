@@ -10,6 +10,7 @@ import * as OutOfFocus from "./out-of-focus";
 import * as Replay from "./replay";
 import * as Misc from "../utils/misc";
 import * as SlowTimer from "../states/slow-timer";
+import * as CompositionState from "../states/composition";
 import * as ConfigEvent from "../observables/config-event";
 import format from "date-fns/format";
 import { Auth } from "../firebase";
@@ -250,6 +251,8 @@ export async function screenshot(): Promise<void> {
     $(".pageTest .ssWatermark").addClass("hidden");
     $(".pageTest .ssWatermark").text("monkeytype.com");
     $(".pageTest .buttons").removeClass("hidden");
+    $("noscript").removeClass("hidden");
+    $("#nocss").removeClass("hidden");
     if (revertCookie) $("#cookiePopupWrapper").removeClass("hidden");
     if (revealReplay) $("#resultReplay").removeClass("hidden");
     if (Auth.currentUser == null) {
@@ -288,6 +291,8 @@ export async function screenshot(): Promise<void> {
   $("#notificationCenter").addClass("hidden");
   $("#commandLineMobileButton").addClass("hidden");
   $(".pageTest .loginTip").addClass("hidden");
+  $("noscript").addClass("hidden");
+  $("#nocss").addClass("hidden");
   if (revertCookie) $("#cookiePopupWrapper").addClass("hidden");
   try {
     const paddingX = 50;
@@ -418,13 +423,6 @@ export function updateWordElement(showError = !Config.blindMode): void {
         currentLetter = `<i class="fas fa-angle-down"></i>`;
       }
 
-      if (
-        Misc.trailingComposeChars.test(input) &&
-        i > input.search(Misc.trailingComposeChars)
-      ) {
-        continue;
-      }
-
       if (charCorrect) {
         ret += `<letter class="${
           Config.highlightMode == "word"
@@ -433,8 +431,8 @@ export function updateWordElement(showError = !Config.blindMode): void {
         } ${tabChar}${nlChar}">${currentLetter}</letter>`;
       } else if (
         currentLetter !== undefined &&
-        Misc.trailingComposeChars.test(input) &&
-        i === input.search(Misc.trailingComposeChars)
+        CompositionState.getComposing() &&
+        i >= CompositionState.getStartPos()
       ) {
         ret += `<letter class="${
           Config.highlightMode == "word" ? wordHighlightClassString : ""
@@ -476,36 +474,31 @@ export function updateWordElement(showError = !Config.blindMode): void {
       }
     }
 
-    const inputWithSingleComposeLength = Misc.trailingComposeChars.test(input)
-      ? input.search(Misc.trailingComposeChars) + 1
-      : input.length;
-    if (inputWithSingleComposeLength < currentWord.length) {
-      for (let i = inputWithSingleComposeLength; i < currentWord.length; i++) {
-        if (Config.funbox === "arrows") {
-          if (currentWord[i] === "↑") {
-            ret += `<letter><i class="fas fa-arrow-up"></i></letter>`;
-          }
-          if (currentWord[i] === "↓") {
-            ret += `<letter><i class="fas fa-arrow-down"></i></letter>`;
-          }
-          if (currentWord[i] === "←") {
-            ret += `<letter><i class="fas fa-arrow-left"></i></letter>`;
-          }
-          if (currentWord[i] === "→") {
-            ret += `<letter><i class="fas fa-arrow-right"></i></letter>`;
-          }
-        } else if (currentWord[i] === "\t") {
-          ret += `<letter class='tabChar'><i class="fas fa-long-arrow-alt-right"></i></letter>`;
-        } else if (currentWord[i] === "\n") {
-          ret += `<letter class='nlChar'><i class="fas fa-angle-down"></i></letter>`;
-        } else {
-          ret +=
-            `<letter class="${
-              Config.highlightMode == "word" ? wordHighlightClassString : ""
-            }">` +
-            currentWord[i] +
-            "</letter>";
+    for (let i = input.length; i < currentWord.length; i++) {
+      if (Config.funbox === "arrows") {
+        if (currentWord[i] === "↑") {
+          ret += `<letter><i class="fas fa-arrow-up"></i></letter>`;
         }
+        if (currentWord[i] === "↓") {
+          ret += `<letter><i class="fas fa-arrow-down"></i></letter>`;
+        }
+        if (currentWord[i] === "←") {
+          ret += `<letter><i class="fas fa-arrow-left"></i></letter>`;
+        }
+        if (currentWord[i] === "→") {
+          ret += `<letter><i class="fas fa-arrow-right"></i></letter>`;
+        }
+      } else if (currentWord[i] === "\t") {
+        ret += `<letter class='tabChar'><i class="fas fa-long-arrow-alt-right"></i></letter>`;
+      } else if (currentWord[i] === "\n") {
+        ret += `<letter class='nlChar'><i class="fas fa-angle-down"></i></letter>`;
+      } else {
+        ret +=
+          `<letter class="${
+            Config.highlightMode == "word" ? wordHighlightClassString : ""
+          }">` +
+          currentWord[i] +
+          "</letter>";
       }
     }
 
@@ -862,25 +855,41 @@ export function applyBurstHeatmap(): void {
     const steps = [
       {
         val: 0,
-        class: "heatmap-0",
+        class: "heatmap0",
       },
       {
         val: median - step * 1.5,
-        class: "heatmap-1",
+        class: "heatmap1",
       },
       {
         val: median - step * 0.5,
-        class: "heatmap-2",
+        class: "heatmap2",
       },
       {
         val: median + step * 0.5,
-        class: "heatmap-3",
+        class: "heatmap3",
       },
       {
         val: median + step * 1.5,
-        class: "heatmap-4",
+        class: "heatmap4",
       },
     ];
+
+    steps.forEach((step, index) => {
+      let string = "";
+      if (index === 0) {
+        string = `<${Math.round(steps[index + 1].val)}`;
+      } else if (index === 4) {
+        string = `${Math.round(step.val - 1)}+`;
+      } else {
+        string = `${Math.round(step.val)}-${
+          Math.round(steps[index + 1].val) - 1
+        }`;
+      }
+
+      $("#resultWordsHistory .heatmapLegend .box" + index).text(string);
+    });
+
     $("#resultWordsHistory .words .word").each((_, word) => {
       const wordBurstVal = parseInt(<string>$(word).attr("burst"));
       let cls = "";
@@ -891,11 +900,11 @@ export function applyBurstHeatmap(): void {
     });
   } else {
     $("#resultWordsHistory .heatmapLegend").addClass("hidden");
-    $("#resultWordsHistory .words .word").removeClass("heatmap-0");
-    $("#resultWordsHistory .words .word").removeClass("heatmap-1");
-    $("#resultWordsHistory .words .word").removeClass("heatmap-2");
-    $("#resultWordsHistory .words .word").removeClass("heatmap-3");
-    $("#resultWordsHistory .words .word").removeClass("heatmap-4");
+    $("#resultWordsHistory .words .word").removeClass("heatmap0");
+    $("#resultWordsHistory .words .word").removeClass("heatmap1");
+    $("#resultWordsHistory .words .word").removeClass("heatmap2");
+    $("#resultWordsHistory .words .word").removeClass("heatmap3");
+    $("#resultWordsHistory .words .word").removeClass("heatmap4");
   }
 }
 
@@ -908,7 +917,13 @@ $(document.body).on("click", "#saveScreenshotButton", () => {
   screenshot();
 });
 
-$(document).on("click", "#testModesNotice .text-button.blind", () => {
+$("#saveScreenshotButton").on("keypress", (e) => {
+  if (e.key === "Enter") {
+    screenshot();
+  }
+});
+
+$(document).on("click", "#testModesNotice .textButton.blind", () => {
   UpdateConfig.setBlindMode(!Config.blindMode);
 });
 

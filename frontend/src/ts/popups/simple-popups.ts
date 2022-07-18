@@ -239,7 +239,7 @@ export function hide(): void {
     });
 }
 
-$("#simplePopupWrapper").mousedown((e) => {
+$("#simplePopupWrapper").on("mousedown", (e) => {
   if ($(e.target).attr("id") === "simplePopupWrapper") {
     if (activePopup) return activePopup.hide();
     $("#simplePopupWrapper")
@@ -455,7 +455,7 @@ list["updateName"] = new SimplePopup(
 
       Notifications.add("Name updated", 1);
       DB.getSnapshot().name = newName;
-      $("#menu .text-button.account .text").text(newName);
+      $("#menu .textButton.account .text").text(newName);
       if (DB.getSnapshot().needsToChangeName) {
         setTimeout(() => {
           location.reload();
@@ -688,6 +688,75 @@ list["deleteAccount"] = new SimplePopup(
   }
 );
 
+list["resetAccount"] = new SimplePopup(
+  "resetAccount",
+  "text",
+  "Reset Account",
+  [
+    {
+      placeholder: "Password",
+      type: "password",
+      initVal: "",
+    },
+  ],
+  "This is the last time you can change your mind. After pressing the button everything is gone.",
+  "Reset",
+  async (_thisPopup, password: string) => {
+    //
+    try {
+      const user = Auth.currentUser;
+      if (user === null) return;
+      if (user.providerData.find((p) => p?.providerId === "password")) {
+        const credential = EmailAuthProvider.credential(
+          user.email as string,
+          password
+        );
+        await reauthenticateWithCredential(user, credential);
+      } else {
+        await reauthenticateWithPopup(user, AccountController.gmailProvider);
+      }
+      Notifications.add("Resetting settings...", 0);
+      UpdateConfig.reset();
+      Loader.show();
+      Notifications.add("Resetting account and stats...", 0);
+      const response = await Ape.users.reset();
+
+      if (response.status !== 200) {
+        Loader.hide();
+        return Notifications.add(
+          "There was an error resetting your account. Please try again.",
+          -1
+        );
+      }
+      Loader.hide();
+      Notifications.add("Reset complete", 1);
+      setTimeout(() => {
+        location.reload();
+      }, 3000);
+    } catch (e) {
+      const typedError = e as FirebaseError;
+      Loader.hide();
+      if (typedError.code === "auth/wrong-password") {
+        Notifications.add("Incorrect password", -1);
+      } else {
+        Notifications.add("Something went wrong: " + e, -1);
+      }
+    }
+  },
+  (thisPopup) => {
+    const user = Auth.currentUser;
+    if (user === null) return;
+
+    if (!user.providerData.find((p) => p?.providerId === "password")) {
+      thisPopup.inputs = [];
+      thisPopup.buttonText = "Reauthenticate to reset";
+    }
+  },
+  (_thisPopup) => {
+    //
+  }
+);
+
 list["clearTagPb"] = new SimplePopup(
   "clearTagPb",
   "text",
@@ -739,7 +808,7 @@ list["applyCustomFont"] = new SimplePopup(
   "text",
   "Custom font",
   [{ placeholder: "Font name", initVal: "" }],
-  "Make sure you have the font installed on your computer before applying.",
+  "Make sure you have the font installed on your computer before applying",
   "Apply",
   (_thisPopup, fontName: string) => {
     if (fontName === "") return;
@@ -1071,7 +1140,7 @@ list["updateCustomTheme"] = new SimplePopup(
       (t) => t._id === _thisPopup.parameters[0]
     );
     if (customTheme === undefined) {
-      Notifications.add("Custom theme does not exist!", -1);
+      Notifications.add("Custom theme does not exist", -1);
       return;
     }
 
@@ -1088,12 +1157,13 @@ list["updateCustomTheme"] = new SimplePopup(
     }
 
     const newTheme = {
-      name: name,
+      name: name.replaceAll(" ", "_"),
       colors: newColors,
     };
     Loader.show();
-    await DB.editCustomTheme(customTheme._id, newTheme);
+    const validation = await DB.editCustomTheme(customTheme._id, newTheme);
     Loader.hide();
+    if (!validation) return;
     UpdateConfig.setCustomThemeColors(newColors);
     Notifications.add("Custom theme updated", 1);
     ThemePicker.refreshButtons();
@@ -1175,6 +1245,10 @@ $(".pageSettings #passPasswordAuth").on("click", () => {
 
 $(".pageSettings #deleteAccount").on("click", () => {
   list["deleteAccount"].show();
+});
+
+$(".pageSettings #resetAccount").on("click", () => {
+  list["resetAccount"].show();
 });
 
 $("#apeKeysPopup .generateApeKey").on("click", () => {

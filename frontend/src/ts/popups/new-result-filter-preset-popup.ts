@@ -8,7 +8,9 @@ export function show(): void {
       .css("opacity", 0)
       .removeClass("hidden")
       .animate({ opacity: 1 }, 100, () => {
-        $("#newResultFilterPresetPopup input").trigger("focus").select();
+        $("#newResultFilterPresetPopup input")
+          .trigger("focus")
+          .trigger("select");
       });
   }
 }
@@ -62,13 +64,6 @@ export function showNewResultFilterPresetPopup(
   callbackFunc = callback;
   show();
 }
-
-$(document).on("click", "#top .config .wordCount .text-button", (e) => {
-  const wrd = $(e.currentTarget).attr("wordCount");
-  if (wrd == "custom") {
-    show();
-  }
-});
 
 $(document).on("keydown", (event) => {
   if (
