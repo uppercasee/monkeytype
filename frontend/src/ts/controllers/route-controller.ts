@@ -9,11 +9,15 @@ import * as PageProfile from "../pages/profile";
 import * as Leaderboards from "../elements/leaderboards";
 import * as TestUI from "../test/test-ui";
 import * as PageTransition from "../states/page-transition";
-// import * as ActivePage from "../states/active-page";
 import { Auth } from "../firebase";
 
 //source: https://www.youtube.com/watch?v=OstALBk-jTc
 // https://www.youtube.com/watch?v=OstALBk-jTc
+
+//this will be used in tribe
+interface NavigateOptions {
+  empty?: boolean;
+}
 
 function pathToRegex(path: string): RegExp {
   return new RegExp(
@@ -34,7 +38,10 @@ function getParams(match: { route: Route; result: RegExpMatchArray }): {
 
 interface Route {
   path: string;
-  load: (params: { [key: string]: string }) => void;
+  load: (
+    params: { [key: string]: string },
+    navigateOptions: NavigateOptions
+  ) => void;
 }
 
 const routes: Route[] = [
@@ -96,12 +103,18 @@ const routes: Route[] = [
   {
     path: "/profile/:uid",
     load: (params): void => {
-      PageController.change(PageProfile.page, true, params);
+      PageController.change(PageProfile.page, {
+        force: true,
+        params,
+      });
     },
   },
 ];
 
-export function navigate(url = window.location.pathname): void {
+export function navigate(
+  url = window.location.pathname,
+  options = {} as NavigateOptions
+): void {
   if (
     TestUI.testRestarting ||
     TestUI.resultCalculating ||
@@ -112,10 +125,10 @@ export function navigate(url = window.location.pathname): void {
   url = url.replace(/\/$/, "");
   if (url === "") url = "/";
   history.pushState(null, "", url);
-  router();
+  router(options);
 }
 
-async function router(): Promise<void> {
+async function router(options = {} as NavigateOptions): Promise<void> {
   const matches = routes.map((r) => {
     return {
       route: r,
@@ -133,10 +146,12 @@ async function router(): Promise<void> {
     return;
   }
 
-  match.route.load(getParams(match));
+  match.route.load(getParams(match), options);
 }
 
-window.addEventListener("popstate", router);
+window.addEventListener("popstate", () => {
+  router();
+});
 
 document.addEventListener("DOMContentLoaded", () => {
   document.body.addEventListener("click", (e) => {

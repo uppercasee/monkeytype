@@ -69,6 +69,7 @@ export async function resetUser(uid: string): Promise<void> {
         favoriteQuotes: {},
         customThemes: [],
         tags: [],
+        xp: 0,
       },
       $unset: {
         discordAvatar: "",
@@ -494,6 +495,10 @@ export async function incrementBananas(uid: string, wpm): Promise<void> {
     //increment when no record found or wpm is within 25% of the record
     await getUsersCollection().updateOne({ uid }, { $inc: { bananas: 1 } });
   }
+}
+
+export async function incrementXp(uid: string, xp: number): Promise<void> {
+  await getUsersCollection().updateOne({ uid }, { $inc: { xp } });
 }
 
 export function themeDoesNotExist(customThemes, id): boolean {
