@@ -1181,11 +1181,11 @@ export async function getDiscordAvatarUrl(
 }
 
 export function getLevel(xp: number): number {
-  return Math.log(1 - ((1 - 1.0545) * xp) / 100) / Math.log(1.0545) + 1;
+  return (1 / 98) * (-151 + Math.sqrt(392 * xp + 22801)) + 1;
 }
 
 export function getXpForLevel(level: number): number {
-  return Math.round(100 * Math.pow(1.0545, level - 1));
+  return 49 * (level - 1) + 100;
 }
 
 export async function promiseAnimation(

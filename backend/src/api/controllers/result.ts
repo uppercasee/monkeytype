@@ -8,7 +8,12 @@ import {
   recordAutoBanEvent,
 } from "../../dal/user";
 import * as PublicStatsDAL from "../../dal/public-stats";
-import { roundTo2, stdDev } from "../../utils/misc";
+import {
+  getCurrentDayTimestamp,
+  getStartOfDayTimestamp,
+  roundTo2,
+  stdDev,
+} from "../../utils/misc";
 import objectHash from "object-hash";
 import Logger from "../../utils/logger";
 import "dotenv/config";
@@ -88,6 +93,7 @@ interface AddResultData {
   insertedId: ObjectId;
   dailyLeaderboardRank?: number;
   xp: number;
+  dailyXpBonus: boolean;
 }
 
 export async function addResult(
@@ -353,9 +359,11 @@ export async function addResult(
     );
   }
 
-  const xpGained = calculateXp(
+  const xpGained = await calculateXp(
     result,
-    req.ctx.configuration.users.xpGainMultiplier
+    req.ctx.configuration.users.xp,
+    uid,
+    user.xp ?? 0
   );
 
   if (result.bailedOut === false) delete result.bailedOut;
@@ -374,7 +382,7 @@ export async function addResult(
 
   const addedResult = await ResultDAL.addResult(uid, result);
 
-  await UserDAL.incrementXp(uid, xpGained);
+  await UserDAL.incrementXp(uid, xpGained.xp);
 
   if (isPb) {
     Logger.logToDb(
@@ -390,7 +398,8 @@ export async function addResult(
     isPb,
     tagPbs,
     insertedId: addedResult.insertedId,
-    xp: xpGained,
+    xp: xpGained.xp,
+    dailyXpBonus: xpGained.dailyBonus ?? false,
   };
 
   if (dailyLeaderboardRank !== -1) {
@@ -401,55 +410,99 @@ export async function addResult(
   return new MonkeyResponse("Result saved", data);
 }
 
-function calculateXp(result, configurationMultiplier): number {
-  if (result.mode === "zen" || result.mode === "custom") {
-    return 0;
+interface XpResult {
+  xp: number;
+  dailyBonus?: boolean;
+}
+
+async function calculateXp(
+  result,
+  xpConfiguration: MonkeyTypes.Configuration["users"]["xp"],
+  uid: string,
+  currentTotalXp: number
+): Promise<XpResult> {
+  const {
+    mode,
+    acc,
+    testDuration,
+    incompleteTestSeconds,
+    afkDuration,
+    charStats,
+    punctuation,
+    numbers,
+  } = result;
+
+  const { enabled, gainMultiplier, maxDailyBonus, minDailyBonus } =
+    xpConfiguration;
+
+  if (mode === "zen" || !enabled) {
+    return {
+      xp: 0,
+    };
   }
 
-  const seconds = result.testDuration - result.afkDuration;
+  const seconds = testDuration - afkDuration;
 
   let modifier = 1;
 
-  if (result.acc === 100) {
+  const correctedEverything = charStats
+    .slice(2)
+    .every((charStat: number) => charStat === 0);
+
+  if (acc === 100) {
     modifier += 0.5;
-  } else {
-    if (
-      result.charStats[1] === 0 &&
-      result.charStats[2] === 0 &&
-      result.charStats[3] === 0
-    ) {
-      //corrected everything bonus
-      modifier += 0.25;
-    }
+  } else if (correctedEverything) {
+    // corrected everything bonus
+    modifier += 0.25;
   }
 
-  if (result.mode === "quote") {
-    //real sentences bonus
+  if (mode === "quote") {
+    // real sentences bonus
     modifier += 0.5;
   } else {
-    //punctuation bonus
-    if (result.punctuation === true) {
+    // punctuation bonus
+    if (punctuation) {
       modifier += 0.4;
     }
-    if (result.numbers === true) {
+    if (numbers) {
       modifier += 0.1;
     }
   }
 
-  const incompleteXp = Math.round(result.incompleteTestSeconds);
+  const incompleteXp = Math.round(incompleteTestSeconds);
+  const accuracyModifier = (acc - 50) / 50;
 
-  // this could be too easy to abuse
-  // if (result.incompleteTestSeconds === 0) {
-  //   //no restart bonus
-  //   modifier += 0.5;
-  // } else {
-  //   incompleteXp = Math.round(result.incompleteTestSeconds);
-  // }
+  let dailyBonus = 0;
+  let lastResultTimestamp: number | undefined;
 
-  const accuracyModifier = (result.acc - 50) / 50;
+  try {
+    const { timestamp } = await ResultDAL.getLastResult(uid);
+    lastResultTimestamp = timestamp;
+  } catch (err) {
+    Logger.error(`Could not fetch last result: ${err}`);
+  }
 
-  return (
-    Math.round(seconds * 2 * modifier * accuracyModifier + incompleteXp) *
-    configurationMultiplier
+  if (lastResultTimestamp) {
+    const lastResultDay = getStartOfDayTimestamp(lastResultTimestamp);
+    const today = getCurrentDayTimestamp();
+    if (lastResultDay !== today) {
+      const proportionalXp = Math.round(currentTotalXp * 0.05);
+      dailyBonus = Math.max(
+        Math.min(maxDailyBonus, proportionalXp),
+        minDailyBonus
+      );
+    }
+  }
+
+  const baseXp = Math.round(
+    seconds * 2 * modifier * accuracyModifier + incompleteXp
   );
+  const totalXp = baseXp * gainMultiplier + dailyBonus;
+
+  const isAwardingDailyBonus = dailyBonus > 0;
+
+  return {
+    xp: totalXp,
+    dailyBonus: isAwardingDailyBonus,
+  };
 }

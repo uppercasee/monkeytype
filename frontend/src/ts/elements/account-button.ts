@@ -31,7 +31,7 @@ export async function update(
   discordAvatar?: string
 ): Promise<void> {
   if (Auth.currentUser != null) {
-    if (xp) {
+    if (xp !== undefined) {
       $("#top #menu .level").text(Math.floor(Misc.getLevel(xp)));
       $("#top #menu .bar").css({
         width: (Misc.getLevel(xp) % 1) * 100 + "%",
@@ -71,7 +71,8 @@ export async function update(
 
 export async function updateXpBar(
   currentXp: number,
-  addedXp: number
+  addedXp: number,
+  withDailyBonus: boolean
 ): Promise<void> {
   const startingLevel = Misc.getLevel(currentXp);
   const endingLevel = Misc.getLevel(currentXp + addedXp);
@@ -79,7 +80,9 @@ export async function updateXpBar(
 
   $("#menu .xpBar").stop(true, true).css("opacity", 0);
 
-  $("#menu .xpBar .xpGain").text(`+${addedXp}`);
+  $("#menu .xpBar .xpGain").text(
+    `+${addedXp} ${withDailyBonus === true ? "daily bonus" : ""}`
+  );
 
   await Misc.promiseAnimation(
     $("#menu .xpBar"),
@@ -115,7 +118,6 @@ export async function updateXpBar(
   } else {
     // const quickSpeed = Misc.mapRange(difference, 10, 2000, 200, 1);
     const quickSpeed = Math.min(1000 / difference, 200);
-    console.log(difference, quickSpeed);
     let toAnimate = difference;
 
     let firstOneDone = false;
@@ -181,16 +183,32 @@ async function flashLevel(): Promise<void> {
 
   barEl.text(parseInt(barEl.text()) + 1);
 
+  const rand = Math.random() * 2 - 1;
+  const rand2 = Math.random() + 1;
+
   barEl
     .stop(true, true)
     .css({
       backgroundColor: themecolors.main,
+      // transform: "scale(1.5) rotate(10deg)",
+      borderSpacing: 100,
     })
     .animate(
       {
         backgroundColor: themecolors.sub,
+        borderSpacing: 0,
       },
-      1000,
-      "easeOutExpo"
+      {
+        step(step) {
+          barEl.css(
+            "transform",
+            `scale(${1 + (step / 200) * rand2}) rotate(${
+              (step / 10) * rand
+            }deg)`
+          );
+        },
+        duration: 2000,
+        easing: "easeOutCubic",
+      }
     );
 }
