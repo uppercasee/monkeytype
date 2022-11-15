@@ -68,13 +68,21 @@ const usernameValidation = joi
   .string()
   .required()
   .custom((value, helpers) => {
-    return isUsernameValid(value)
-      ? value
-      : helpers.error("string.pattern.base");
+    if (containsProfanity(value)) {
+      return helpers.error("string.profanity");
+    }
+
+    if (!isUsernameValid(value)) {
+      return helpers.error("string.pattern.base");
+    }
+
+    return value;
   })
   .messages({
+    "string.profanity":
+      "The username contains profanity. If you believe this is a mistake, please contact us ",
     "string.pattern.base":
-      "Username invalid. Name cannot use special characters or contain more than 16 characters. Can include _ . and -",
+      "Username invalid. Name cannot use special characters or contain more than 16 characters. Can include _ . and - ",
   });
 
 const languageSchema = joi.string().min(1).required();
@@ -89,6 +97,12 @@ router.get(
 
 router.post(
   "/signup",
+  validateConfiguration({
+    criteria: (configuration) => {
+      return configuration.users.signUp;
+    },
+    invalidMessage: "Sign up is temporarily disabled",
+  }),
   authenticateRequest(),
   RateLimit.userSignup,
   validateRequest({
@@ -96,6 +110,7 @@ router.post(
       email: joi.string().email(),
       name: usernameValidation,
       uid: joi.string(),
+      captcha: joi.string().required(),
     },
   }),
   asyncHandler(UserController.createNewUser)
@@ -328,6 +343,14 @@ const requireDiscordIntegrationEnabled = validateConfiguration({
   invalidMessage: "Discord integration is not available at this time",
 });
 
+router.get(
+  "/discord/oauth",
+  requireDiscordIntegrationEnabled,
+  authenticateRequest(),
+  RateLimit.userDiscordLink,
+  asyncHandler(UserController.getOauthLink)
+);
+
 router.post(
   "/discord/link",
   requireDiscordIntegrationEnabled,
@@ -337,6 +360,7 @@ router.post(
     body: {
       tokenType: joi.string().required(),
       accessToken: joi.string().required(),
+      state: joi.string().length(20).required(),
     },
   }),
   asyncHandler(UserController.linkDiscord)
@@ -414,7 +438,7 @@ const requireProfilesEnabled = validateConfiguration({
 });
 
 router.get(
-  "/:uid/profile",
+  "/:uidOrName/profile",
   requireProfilesEnabled,
   authenticateRequest({
     isPublic: true,
@@ -423,7 +447,10 @@ router.get(
   withApeRateLimiter(RateLimit.userProfileGet),
   validateRequest({
     params: {
-      uid: joi.string().required(),
+      uidOrName: joi.string().required(),
+    },
+    query: {
+      isUid: joi.string().allow(""),
     },
   }),
   asyncHandler(UserController.getProfile)
@@ -452,8 +479,8 @@ router.patch(
       keyboard: profileDetailsBase.max(75),
       selectedBadgeId: joi.number(),
       socialProfiles: joi.object({
-        twitter: profileDetailsBase.max(20),
-        github: profileDetailsBase.max(39),
+        twitter: profileDetailsBase.regex(/^[0-9a-zA-Z_.-]+$/).max(20),
+        github: profileDetailsBase.regex(/^[0-9a-zA-Z_.-]+$/).max(39),
         website: profileDetailsBase
           .uri({
             scheme: "https",
@@ -468,6 +495,37 @@ router.patch(
     },
   }),
   asyncHandler(UserController.updateProfile)
+);
+
+const mailIdSchema = joi.array().items(joi.string().guid()).min(1).default([]);
+
+const requireInboxEnabled = validateConfiguration({
+  criteria: (configuration) => {
+    return configuration.users.inbox.enabled;
+  },
+  invalidMessage: "Your inbox is not available at this time.",
+});
+
+router.get(
+  "/inbox",
+  requireInboxEnabled,
+  authenticateRequest(),
+  RateLimit.userMailGet,
+  asyncHandler(UserController.getInbox)
+);
+
+router.patch(
+  "/inbox",
+  requireInboxEnabled,
+  authenticateRequest(),
+  RateLimit.userMailUpdate,
+  validateRequest({
+    body: {
+      mailIdsToDelete: mailIdSchema,
+      mailIdsToMarkRead: mailIdSchema,
+    },
+  }),
+  asyncHandler(UserController.updateInbox)
 );
 
 export default router;
