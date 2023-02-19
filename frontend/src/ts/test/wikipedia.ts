@@ -1,16 +1,6 @@
 import * as Loader from "../elements/loader";
 import * as Misc from "../utils/misc";
-
-export class Section {
-  public title: string;
-  public author: string;
-  public words: string[];
-  constructor(title: string, author: string, words: string[]) {
-    this.title = title;
-    this.author = author;
-    this.words = words;
-  }
-}
+import { Section } from "../utils/misc";
 
 export async function getTLD(
   languageGroup: MonkeyTypes.LanguageGroup
@@ -105,7 +95,7 @@ export async function getSection(language: string): Promise<Section> {
           sectionText = sectionText.replace(/<\/p><p>+/g, " ");
 
           // Convert HTML to text
-          sectionText = $("<div/>").html(sectionText).text();
+          sectionText = Misc.htmlToText(sectionText);
 
           // Remove reference links
           sectionText = sectionText.replace(/\[\d+\]/gi, "");

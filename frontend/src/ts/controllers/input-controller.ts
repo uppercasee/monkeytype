@@ -2,18 +2,15 @@ import * as TestLogic from "../test/test-logic";
 import * as TestUI from "../test/test-ui";
 import * as TestStats from "../test/test-stats";
 import * as Monkey from "../test/monkey";
-import Config, * as UpdateConfig from "../config";
-import * as Keymap from "../elements/keymap";
+import Config from "../config";
 import * as Misc from "../utils/misc";
 import * as LiveAcc from "../test/live-acc";
 import * as LiveBurst from "../test/live-burst";
-import * as Funbox from "../test/funbox";
+import * as Funbox from "../test/funbox/funbox";
 import * as Sound from "./sound-controller";
 import * as Caret from "../test/caret";
 import * as ManualRestart from "../test/manual-restart-tracker";
-import * as Notifications from "../elements/notifications";
 import * as CustomText from "../test/custom-text";
-import * as Settings from "../pages/settings";
 import * as LayoutEmulator from "../test/layout-emulator";
 import * as PaceCaret from "../test/pace-caret";
 import * as TimerProgress from "../test/timer-progress";
@@ -30,6 +27,11 @@ import * as TestWords from "../test/test-words";
 import * as Hangul from "hangul-js";
 import * as CustomTextState from "../states/custom-text-name";
 import { navigate } from "../observables/navigate-event";
+import * as FunboxList from "../test/funbox/funbox-list";
+import * as Settings from "../pages/settings";
+import * as KeymapEvent from "../observables/keymap-event";
+import { IgnoredKeys } from "../constants/ignored-keys";
+import { ModifierKeys } from "../constants/modifier-keys";
 
 let dontInsertSpace = false;
 let correctShiftUsed = true;
@@ -55,7 +57,7 @@ function updateUI(): void {
 
   if (Config.keymapMode === "next" && Config.mode !== "zen") {
     if (!Config.language.startsWith("korean")) {
-      Keymap.highlightKey(
+      KeymapEvent.highlight(
         TestWords.words
           .getCurrent()
           .charAt(TestInput.input.current.length)
@@ -85,13 +87,13 @@ function updateUI(): void {
               inputCharLength - koCurrWord[inputGroupLength].length
             ];
 
-          Keymap.highlightKey(koChar);
+          KeymapEvent.highlight(koChar);
         } catch (e) {
-          Keymap.highlightKey("");
+          KeymapEvent.highlight("");
         }
       } else {
         //for new words
-        Keymap.highlightKey(koCurrWord[0][0]);
+        KeymapEvent.highlight(koCurrWord[0][0]);
       }
     }
   }
@@ -122,7 +124,9 @@ function backspaceToPrevious(): void {
 
   TestInput.input.current = TestInput.input.popHistory();
   TestInput.corrected.popHistory();
-  if (Config.funbox === "nospace" || Config.funbox === "arrows") {
+  if (
+    FunboxList.get(Config.funbox).find((f) => f.properties?.includes("nospace"))
+  ) {
     TestInput.input.current = TestInput.input.current.slice(0, -1);
     setWordsInput(" " + TestInput.input.current + " ");
   }
@@ -147,35 +151,24 @@ function handleSpace(): void {
   }
 
   const currentWord: string = TestWords.words.getCurrent();
-  if (Config.funbox === "layoutfluid" && Config.mode !== "time") {
-    // here I need to check if Config.customLayoutFluid exists because of my
-    // scuffed solution of returning whenever value is undefined in the setCustomLayoutfluid function
-    const layouts: string[] = Config.customLayoutfluid
-      ? Config.customLayoutfluid.split("#")
-      : ["qwerty", "dvorak", "colemak"];
-    let index = 0;
-    const outOf: number = TestWords.words.length;
-    index = Math.floor(
-      (TestInput.input.history.length + 1) / (outOf / layouts.length)
-    );
-    if (Config.layout !== layouts[index] && layouts[index] !== undefined) {
-      Notifications.add(`--- !!! ${layouts[index]} !!! ---`, 0);
+
+  for (const f of FunboxList.get(Config.funbox)) {
+    if (f.functions?.handleSpace) {
+      f.functions.handleSpace();
     }
-    UpdateConfig.setLayout(layouts[index]);
-    UpdateConfig.setKeymapLayout(layouts[index]);
-    Keymap.highlightKey(
-      TestWords.words
-        .getCurrent()
-        .charAt(TestInput.input.current.length)
-        .toString()
-    );
-    Settings.groups["layout"]?.updateInput();
   }
+  Settings.groups["layout"]?.updateInput();
+
   dontInsertSpace = true;
 
   const burst: number = TestStats.calculateBurst();
   LiveBurst.update(Math.round(burst));
   TestInput.pushBurstToHistory(burst);
+
+  const nospace =
+    FunboxList.get(Config.funbox).find((f) =>
+      f.properties?.includes("nospace")
+    ) !== undefined;
 
   //correct word or in zen mode
   const isWordCorrect: boolean =
@@ -192,12 +185,12 @@ function handleSpace(): void {
     Caret.updatePosition();
     TestInput.incrementKeypressCount();
     TestInput.pushKeypressWord(TestWords.words.currentIndex);
-    if (Config.funbox !== "nospace" && Config.funbox !== "arrows") {
+    if (!nospace) {
       Sound.playClick();
     }
     Replay.addReplayEvent("submitCorrectWord");
   } else {
-    if (Config.funbox !== "nospace" && Config.funbox !== "arrows") {
+    if (!nospace) {
       if (!Config.playSoundOnError || Config.blindMode) {
         Sound.playClick();
       } else {
@@ -302,7 +295,7 @@ function handleSpace(): void {
   } //end of line wrap
 
   if (Config.keymapMode === "react") {
-    Keymap.flashKey(" ", true);
+    KeymapEvent.flash(" ", true);
   }
   if (
     Config.mode === "words" ||
@@ -355,24 +348,19 @@ function isCharCorrect(char: string, charIndex: number): boolean {
     }
   }
 
-  if (Config.funbox === "arrows") {
-    if ((char === "w" || char === "ArrowUp") && originalChar === "↑") {
-      return true;
-    }
-    if ((char === "s" || char === "ArrowDown") && originalChar === "↓") {
-      return true;
-    }
-    if ((char === "a" || char === "ArrowLeft") && originalChar === "←") {
-      return true;
-    }
-    if ((char === "d" || char === "ArrowRight") && originalChar === "→") {
-      return true;
-    }
+  const funbox = FunboxList.get(Config.funbox).find(
+    (f) => f.functions?.isCharCorrect
+  );
+  if (funbox?.functions?.isCharCorrect) {
+    return funbox.functions.isCharCorrect(char, originalChar);
   }
 
   if (
-    (char === "’" || char === "‘" || char === "'") &&
-    (originalChar === "’" || originalChar === "‘" || originalChar === "'")
+    (char === "’" || char === "‘" || char === "'" || char === "ʼ") &&
+    (originalChar === "’" ||
+      originalChar === "‘" ||
+      originalChar === "'" ||
+      originalChar === "ʼ")
   ) {
     return true;
   }
@@ -414,12 +402,17 @@ function handleChar(
     return;
   }
 
-  if (char === "\n" && Config.funbox === "58008") {
-    char = " ";
+  for (const f of FunboxList.get(Config.funbox)) {
+    if (f.functions?.handleChar) char = f.functions.handleChar(char);
   }
 
+  const nospace =
+    FunboxList.get(Config.funbox).find((f) =>
+      f.properties?.includes("nospace")
+    ) !== undefined;
+
   if (char !== "\n" && char !== "\t" && /\s/.test(char)) {
-    if (Config.funbox === "nospace" || Config.funbox === "arrows") return;
+    if (nospace) return;
     handleSpace();
 
     //insert space for expert and master or strict space,
@@ -527,7 +520,7 @@ function handleChar(
 
   //keymap
   if (Config.keymapMode === "react") {
-    Keymap.flashKey(char, thisCharCorrect);
+    KeymapEvent.flash(char, thisCharCorrect);
   }
 
   if (!correctShiftUsed && Config.difficulty != "master") return;
@@ -591,8 +584,6 @@ function handleChar(
   }
 
   if (!thisCharCorrect && Config.difficulty == "master") {
-    TestInput.input.pushHistory();
-    TestInput.corrected.pushHistory();
     TestLogic.fail("difficulty");
     return;
   }
@@ -610,8 +601,6 @@ function handleChar(
           Config.stopOnError == "off")) &&
       lastIndex === TestWords.words.length - 1
     ) {
-      TestInput.input.pushHistory();
-      TestInput.corrected.pushHistory();
       TestLogic.finish();
       return;
     }
@@ -648,7 +637,7 @@ function handleChar(
 
   //simulate space press in nospace funbox
   if (
-    ((Config.funbox === "nospace" || Config.funbox === "arrows") &&
+    (nospace &&
       TestInput.input.current.length === TestWords.words.getCurrent().length) ||
     (char === "\n" && thisCharCorrect)
   ) {
@@ -682,6 +671,8 @@ function handleTab(event: JQuery.KeyDownEvent, popupVisible: boolean): void {
     // put caret at right position again
     area.selectionStart = area.selectionEnd = start + 1;
 
+    CustomText.setPopupTextareaState(area.value);
+
     return;
   }
 
@@ -695,7 +686,7 @@ function handleTab(event: JQuery.KeyDownEvent, popupVisible: boolean): void {
   }
 
   const modalVisible: boolean =
-    !$("#commandLineWrapper").hasClass("hidden") || popupVisible;
+    Misc.isPopupVisible("commandLineWrapper") || popupVisible;
 
   if (Config.quickRestart === "esc") {
     // dont do anything special
@@ -765,11 +756,13 @@ function handleTab(event: JQuery.KeyDownEvent, popupVisible: boolean): void {
 $(document).keydown(async (event) => {
   if (ActivePage.get() == "loading") return;
 
+  if (IgnoredKeys.includes(event.key)) return;
+
   //autofocus
   const wordsFocused: boolean = $("#wordsInput").is(":focus");
   const pageTestActive: boolean = ActivePage.get() === "test";
-  const commandLineVisible = !$("#commandLineWrapper").hasClass("hidden");
-  const leaderboardsVisible = !$("#leaderboardsWrapper").hasClass("hidden");
+  const commandLineVisible = Misc.isPopupVisible("commandLineWrapper");
+  const leaderboardsVisible = Misc.isPopupVisible("leaderboardsWrapper");
 
   const popupVisible: boolean = Misc.isAnyPopupVisible();
 
@@ -781,7 +774,11 @@ $(document).keydown(async (event) => {
     !TestUI.resultVisible &&
     (wordsFocused || event.key !== "Enter");
 
-  if (allowTyping && !wordsFocused && event.key !== "Enter") {
+  if (
+    allowTyping &&
+    !wordsFocused &&
+    !["Enter", ...ModifierKeys].includes(event.key)
+  ) {
     TestUI.focusWords();
     if (Config.showOutOfFocusWarning) {
       event.preventDefault();
@@ -796,7 +793,7 @@ $(document).keydown(async (event) => {
   //esc
   if (event.key === "Escape" && Config.quickRestart === "esc") {
     const modalVisible: boolean =
-      !$("#commandLineWrapper").hasClass("hidden") || popupVisible;
+      Misc.isPopupVisible("commandLineWrapper") || popupVisible;
 
     if (modalVisible) return;
 
@@ -858,11 +855,6 @@ $(document).keydown(async (event) => {
     }
   }
 
-  if (Config.funbox !== "arrows" && /Arrow/i.test(event.key)) {
-    event.preventDefault();
-    return;
-  }
-
   Monkey.type();
 
   if (event.key === "Backspace" && TestInput.input.current.length === 0) {
@@ -891,6 +883,9 @@ $(document).keydown(async (event) => {
     } else {
       handleChar("\n", TestInput.input.current.length);
       setWordsInput(" " + TestInput.input.current);
+      if (Config.tapeMode !== "off") {
+        TestUI.scrollTape();
+      }
     }
   }
 
@@ -915,22 +910,22 @@ $(document).keydown(async (event) => {
       (await ShiftTracker.isUsingOppositeShift(event)) !== false;
   }
 
-  if (Config.funbox === "arrows") {
-    let char: string = event.key;
-    if (["ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown"].includes(char)) {
-      if (char === "ArrowLeft") char = "a";
-      if (char === "ArrowRight") char = "d";
-      if (char === "ArrowDown") char = "s";
-      if (char === "ArrowUp") char = "w";
+  const funbox = FunboxList.get(Config.funbox).find(
+    (f) => f.functions?.preventDefaultEvent
+  );
+  if (funbox?.functions?.preventDefaultEvent) {
+    if (await funbox.functions.preventDefaultEvent(event)) {
       event.preventDefault();
-      handleChar(char, TestInput.input.current.length);
+      handleChar(event.key, TestInput.input.current.length);
       updateUI();
       setWordsInput(" " + TestInput.input.current);
       if (Config.tapeMode !== "off") {
         TestUI.scrollTape();
       }
     }
-  } else if (
+  }
+
+  if (
     Config.layout !== "default" &&
     !(
       event.ctrlKey ||
@@ -957,6 +952,8 @@ $("#wordsInput").keyup((event) => {
     event.preventDefault();
     return;
   }
+
+  if (IgnoredKeys.includes(event.key)) return;
 
   if (TestUI.resultVisible) return;
   const now: number = performance.now();
@@ -1058,7 +1055,7 @@ $("#wordsInput").on("input", (event) => {
     TestUI.updateWordElement();
     Caret.updatePosition();
     if (!CompositionState.getComposing()) {
-      Replay.addReplayEvent("setLetterIndex", currTestInput.length);
+      Replay.addReplayEvent("setLetterIndex", currTestInput.length - 1);
     }
   } else if (inputValue !== currTestInput) {
     let diffStart = 0;

@@ -5,7 +5,6 @@ import * as BannerEvent from "../observables/banner-event";
 import * as NotificationEvent from "../observables/notification-event";
 
 function updateMargin(): void {
-  console.log("updating margin");
   const height = $("#bannerCenter").height() as number;
   $("#centerContent").css(
     "padding-top",
@@ -276,6 +275,10 @@ export function addBanner(
   );
   banner.show();
   return banner.id;
+}
+
+export function clearAllNotifications(): void {
+  $("#notificationCenter .notif").remove();
 }
 
 const debouncedMarginUpdate = debounce(100, updateMargin);

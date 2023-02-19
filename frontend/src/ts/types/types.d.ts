@@ -1,3 +1,5 @@
+type typesSeparatedWithHash<T> = T | `${T}#${typesSeparatedWithHash<T>}`;
+
 declare namespace MonkeyTypes {
   type Difficulty = "normal" | "expert" | "master";
 
@@ -91,6 +93,8 @@ declare namespace MonkeyTypes {
     9 = sawtooth
     10 = square
     11 = triangle
+    12 = pentatonic
+    13 = wholetone
   */
   type PlaySoundOnClick =
     | "off"
@@ -104,7 +108,9 @@ declare namespace MonkeyTypes {
     | "8"
     | "9"
     | "10"
-    | "11";
+    | "11"
+    | "12"
+    | "13";
 
   type SoundVolume = "0.1" | "0.5" | "1.0";
 
@@ -140,8 +146,6 @@ declare namespace MonkeyTypes {
   type MonkeyPowerLevel = "off" | "1" | "2" | "3" | "4";
 
   type MinimumBurst = "off" | "fixed" | "flex";
-
-  type FunboxObjectType = "script" | "style";
 
   type IndicateTypos = "off" | "below" | "replace";
 
@@ -183,12 +187,65 @@ declare namespace MonkeyTypes {
     display?: string;
   }
 
-  interface FunboxObject {
+  type FunboxProperty =
+    | "symmetricChars"
+    | "conflictsWithSymmetricChars"
+    | "changesWordsVisibility"
+    | "speaks"
+    | "unspeakable"
+    | "changesLayout"
+    | "ignoresLayout"
+    | "usesLayout"
+    | "ignoresLanguage"
+    | "noLigatures"
+    | "noLetters"
+    | "changesCapitalisation"
+    | "nospace"
+    | `toPush:${number}`
+    | "noInfiniteDuration";
+
+  interface FunboxFunctions {
+    getWord?: (wordset?: Misc.Wordset) => string;
+    punctuateWord?: (word: string) => string;
+    withWords?: (words?: string[]) => Promise<Misc.Wordset>;
+    alterText?: (word: string) => string;
+    applyCSS?: () => void;
+    applyConfig?: () => void;
+    rememberSettings?: () => void;
+    toggleScript?: (params: string[]) => void;
+    pullSection?: (language?: string) => Promise<Misc.Section | false>;
+    handleSpace?: () => void;
+    handleChar?: (char: string) => string;
+    isCharCorrect?: (char: string, originalChar: string) => boolean;
+    preventDefaultEvent?: (
+      event: JQuery.KeyDownEvent<Document, null, Document, Document>
+    ) => Promise<boolean>;
+    handleKeydown?: (
+      event: JQuery.KeyDownEvent<Document, null, Document, Document>
+    ) => Promise<void>;
+    getResultContent?: () => string;
+    start?: () => void;
+    restart?: () => void;
+    getWordHtml?: (char: string, letterTag?: boolean) => string;
+  }
+
+  interface FunboxForcedConfig {
+    [key: string]: ConfigValues[];
+    // punctuation?: boolean;
+    // numbers?: boolean;
+    // highlightMode?: typesSeparatedWithHash<HighlightMode>;
+    // words?: FunboxModeDuration;
+    // time?: FunboxModeDuration;
+  }
+
+  interface FunboxMetadata {
     name: string;
-    type: FunboxObjectType;
     info: string;
+    canGetPb?: boolean;
     alias?: string;
-    affectsWordGeneration?: boolean;
+    forcedConfig?: MonkeyTypes.FunboxForcedConfig;
+    properties?: FunboxProperty[];
+    functions?: FunboxFunctions;
   }
 
   interface CustomText {
@@ -680,26 +737,30 @@ declare namespace MonkeyTypes {
     alias?: string;
     input?: boolean;
     visible?: boolean;
+    customStyle?: string;
     defaultValue?: () => string;
     configValue?: string | number | boolean | number[];
     configValueMode?: string;
     exec?: (input?: string) => void;
     hover?: () => void;
     available?: () => void;
-    beforeSubgroup?: () => void;
     shouldFocusTestUI?: boolean;
+    customData?: Record<string, string>;
   }
 
   interface CommandsSubgroup {
     title: string;
     configKey?: keyof Config;
     list: Command[];
+    beforeList?: () => void;
   }
 
   interface Theme {
     name: string;
     bgColor: string;
     mainColor: string;
+    subColor: string;
+    textColor: string;
   }
 
   interface Quote {

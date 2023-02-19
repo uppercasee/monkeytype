@@ -11,8 +11,10 @@ import { Server } from "http";
 import { version } from "./version";
 import { recordServerVersion } from "./utils/prometheus";
 import * as RedisClient from "./init/redis";
-import { initJobQueue } from "./tasks/george";
+import queues from "./queues";
+import workers from "./workers";
 import Logger from "./utils/logger";
+import * as EmailClient from "./init/email-client";
 
 async function bootServer(port: number): Promise<Server> {
   try {
@@ -34,15 +36,35 @@ async function bootServer(port: number): Promise<Server> {
     const liveConfiguration = await getLiveConfiguration();
     Logger.success("Live configuration fetched");
 
+    Logger.info("Initializing email client...");
+    EmailClient.init();
+
     Logger.info("Connecting to redis...");
     await RedisClient.connect();
 
     if (RedisClient.isConnected()) {
       Logger.success("Connected to redis");
+      const connection = RedisClient.getConnection();
 
-      Logger.info("Initializing task queues...");
-      initJobQueue(RedisClient.getConnection());
-      Logger.success("Task queues initialized");
+      Logger.info("Initializing queues...");
+      queues.forEach((queue) => {
+        queue.init(connection);
+      });
+      Logger.success(
+        `Queues initialized: ${queues
+          .map((queue) => queue.queueName)
+          .join(", ")}`
+      );
+
+      Logger.info("Initializing workers...");
+      workers.forEach((worker) => {
+        worker(connection).run();
+      });
+      Logger.success(
+        `Workers initialized: ${workers
+          .map((worker) => worker(connection).name)
+          .join(", ")}`
+      );
     }
 
     initializeDailyLeaderboardsCache(liveConfiguration.dailyLeaderboards);

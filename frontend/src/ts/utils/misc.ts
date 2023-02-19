@@ -151,15 +151,15 @@ export async function findCurrentGroup(
   return retgroup;
 }
 
-let funboxList: MonkeyTypes.FunboxObject[] | undefined;
-export async function getFunboxList(): Promise<MonkeyTypes.FunboxObject[]> {
+let funboxList: MonkeyTypes.FunboxMetadata[] | undefined;
+export async function getFunboxList(): Promise<MonkeyTypes.FunboxMetadata[]> {
   if (!funboxList) {
-    let list = await cachedFetchJson<MonkeyTypes.FunboxObject[]>(
+    let list = await cachedFetchJson<MonkeyTypes.FunboxMetadata[]>(
       "/./funbox/_list.json"
     );
     list = list.sort(function (
-      a: MonkeyTypes.FunboxObject,
-      b: MonkeyTypes.FunboxObject
+      a: MonkeyTypes.FunboxMetadata,
+      b: MonkeyTypes.FunboxMetadata
     ) {
       const nameA = a.name.toLowerCase();
       const nameB = b.name.toLowerCase();
@@ -176,8 +176,8 @@ export async function getFunboxList(): Promise<MonkeyTypes.FunboxObject[]> {
 
 export async function getFunbox(
   funbox: string
-): Promise<MonkeyTypes.FunboxObject | undefined> {
-  const list: MonkeyTypes.FunboxObject[] = await getFunboxList();
+): Promise<MonkeyTypes.FunboxMetadata | undefined> {
+  const list: MonkeyTypes.FunboxMetadata[] = await getFunboxList();
   return list.find(function (element) {
     return element.name == funbox;
   });
@@ -401,6 +401,10 @@ export function capitalizeFirstLetterOfEachWord(str: string): string {
     .split(/ +/)
     .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
     .join(" ");
+}
+
+export function capitalizeFirstLetter(str: string): string {
+  return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
 export function isASCIILetter(c: string): boolean {
@@ -1190,12 +1194,24 @@ export function createErrorMessage(error: unknown, message: string): string {
   return message;
 }
 
+export function isElementVisible(query: string): boolean {
+  const popup = document.querySelector(query);
+  if (!popup) {
+    return false;
+  }
+  const style = window.getComputedStyle(popup);
+  return style.display !== "none";
+}
+
+export function isPopupVisible(popupId: string): boolean {
+  return isElementVisible(`#popups #${popupId}`);
+}
+
 export function isAnyPopupVisible(): boolean {
   const popups = document.querySelectorAll("#popups .popupWrapper");
   let popupVisible = false;
   for (const popup of popups) {
-    const style = window.getComputedStyle(popup);
-    if (style.display !== "none") {
+    if (isPopupVisible(popup.id)) {
       popupVisible = true;
       break;
     }
@@ -1285,12 +1301,37 @@ export function memoizeAsync<T extends (...args: any) => Promise<any>>(
   }) as T;
 }
 
+export class Wordset {
+  public words: string[];
+  public length: number;
+  constructor(words: string[]) {
+    this.words = words;
+    this.length = this.words.length;
+  }
+
+  public randomWord(): string {
+    return randomElementFromArray(this.words);
+  }
+}
+
+export class Section {
+  public title: string;
+  public author: string;
+  public words: string[];
+  constructor(title: string, author: string, words: string[]) {
+    this.title = title;
+    this.author = author;
+    this.words = words;
+  }
+}
+
 export function isPasswordStrong(password: string): boolean {
   const hasCapital = !!password.match(/[A-Z]/);
   const hasNumber = !!password.match(/[\d]/);
   const hasSpecial = !!password.match(/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/);
   const isLong = password.length >= 8;
-  return hasCapital && hasNumber && hasSpecial && isLong;
+  const isShort = password.length <= 64;
+  return hasCapital && hasNumber && hasSpecial && isLong && isShort;
 }
 
 export function areUnsortedArraysEqual(a: unknown[], b: unknown[]): boolean {
@@ -1299,4 +1340,46 @@ export function areUnsortedArraysEqual(a: unknown[], b: unknown[]): boolean {
 
 export function areSortedArraysEqual(a: unknown[], b: unknown[]): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+export function intersect<T>(a: T[], b: T[], removeDuplicates = false): T[] {
+  let t;
+  if (b.length > a.length) (t = b), (b = a), (a = t); // indexOf to loop over shorter
+  const filtered = a.filter(function (e) {
+    return b.indexOf(e) > -1;
+  });
+  return removeDuplicates ? [...new Set(filtered)] : filtered;
+}
+
+export function htmlToText(html: string): string {
+  const el = document.createElement("div");
+  el.innerHTML = html;
+  return el.textContent || el.innerText || "";
+}
+
+export function camelCaseToWords(str: string): string {
+  return str
+    .replace(/([A-Z])/g, " $1")
+    .trim()
+    .toLowerCase();
+}
+
+export function loadCSS(href: string, prepend = false): void {
+  const link = document.createElement("link");
+  link.type = "text/css";
+  link.rel = "stylesheet";
+  link.href = href;
+  if (prepend) {
+    document.getElementsByTagName("head")[0].prepend(link);
+  } else {
+    document.getElementsByTagName("head")[0].appendChild(link);
+  }
+}
+
+export function isLocalhost(): boolean {
+  return (
+    location.hostname === "localhost" ||
+    location.hostname === "127.0.0.1" ||
+    location.hostname === ""
+  );
 }

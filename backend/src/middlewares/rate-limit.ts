@@ -242,7 +242,7 @@ export const resultsGet = rateLimit({
 });
 
 // Results Routing
-export const resultsGet_ape = rateLimit({
+export const resultsGetApe = rateLimit({
   windowMs: ONE_HOUR_MS,
   max: 1 * REQUEST_MULTIPLIER,
   keyGenerator: getKeyWithUid,
@@ -437,6 +437,20 @@ export const usersTagsEdit = userDiscordLink;
 export const userDiscordUnlink = rateLimit({
   windowMs: ONE_HOUR_MS,
   max: 15 * REQUEST_MULTIPLIER,
+  keyGenerator: getKeyWithUid,
+  handler: customHandler,
+});
+
+export const userRequestVerificationEmail = rateLimit({
+  windowMs: ONE_HOUR_MS / 4,
+  max: 1 * REQUEST_MULTIPLIER,
+  keyGenerator: getKeyWithUid,
+  handler: customHandler,
+});
+
+export const userForgotPasswordEmail = rateLimit({
+  windowMs: ONE_HOUR_MS / 4,
+  max: 1 * REQUEST_MULTIPLIER,
   keyGenerator: getKeyWithUid,
   handler: customHandler,
 });
